@@ -4,10 +4,6 @@
 - **Due Date:** Sep 24, 2026
 - **Last Updated Date:** Sep 8, 2026
 
-## Collaboration and AI Policy
-
-Our full Academic Honesty policy can be found on [our website](https://www.andrew.cmu.edu/course/17-715/2026f/syllabus/). As a reminder, all labs should be completed individually. You may discuss the lab at a high level with a classmate, but you may not work on code together or share any of your code. You may use AI tools as a tutor, but you may not upload lab materials to external AI services or use them to solve assignments for you. We may ask you to explain or walk us through your lab submissions; if you cannot explain the concepts behind your submitted work, you will receive no credit for that assignment.
-
 ## Getting Started
 
 Log in to our lab machine `coffeelakerf.lan.local.cmu.edu` via SSH by running `ssh username@coffeelakerf.lan.local.cmu.edu`. The username is your Andrew ID, and we have sent you the password through [Canvas](https://canvas.cmu.edu/). After you have access to the lab machine, you can put your public key at `~/.ssh/authorized_keys` to log in with your private key.
@@ -55,9 +51,9 @@ Before we begin, let's take a look at the lab machine's microarchitecture. The s
 | Cache          | Cache Line Size | Total Size | Number of Ways (Associativity) | Number of Sets |
 |----------------|-----------------|------------|--------------------------------|----------------|
 | L1-Data        |        64       |  32768     |                8               |         64     |
-| L1-Instruction |       64        |    32768   |               1                |                |
-| L2             |       64        |   262144   |              4                 |                |
-| L3             |       64        | 16777216   |             16                  |                |
+| L1-Instruction |       64        |    32768   |               1                |         512    |
+| L2             |       64        |   262144   |              4                 |       1024     |
+| L3             |       64        | 16777216   |             16                 |       16384    |
 
 ## Part 1: Capture the Flag with Flush+Reload (20%)
 
