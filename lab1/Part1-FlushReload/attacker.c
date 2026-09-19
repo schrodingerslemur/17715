@@ -26,10 +26,15 @@ int main()
 
     // shuffle probe order so the prefetcher can't predict our accesses
     // fisher yates shuffle
+    //
     int order[SEC_RANGE];
+    // Set order array in incrementing order
     for (int i = 0; i < SEC_RANGE; i++)
         order[i] = i;
     srand(time(NULL) ^ getpid()); // get random seed
+
+    // get random value j in [0, i] (start from back)
+    // switch order[i] and order[j]
     for (int i = SEC_RANGE - 1; i > 0; i--)
     {
         int j = rand() % (i + 1);
@@ -54,7 +59,7 @@ int main()
         }
     }
 
-    // flag is the line hit most often
+    // get max in flags
     int best = 0;
     for (int i = 0; i < SEC_RANGE; i++)
         if (hits[i] > best)
