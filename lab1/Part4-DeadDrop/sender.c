@@ -5,17 +5,11 @@
 #include <unistd.h>
 
 #define THRESHOLD 150
-#define READY 0x1000
-#define BIT 0x2000
-#define ACK 0x3000
+#define BURST 500
+#define DEBOUNCE 8
 
 static char *chan;
-
-static void wait(long n)
-{
-    while (n--)
-        asm volatile("" ::: "memory");
-}
+static long R, B, A; // ready, bit, ack line offsets
 
 static void touch(long off) { (void)*(volatile char *)(chan + off); }
 
@@ -23,20 +17,24 @@ static int probe(long off)
 {
     ADDR_PTR a = (ADDR_PTR)(chan + off);
     clflush(a);
-    wait(200);
     return measure_one_block_access_time(a) < THRESHOLD;
 }
 
-// hold data+ready until the receiver acks, then wait for the ack to clear
 static void send_bit(int b)
 {
-    do {
-        if (b)
-            touch(BIT);
-        touch(READY);
-    } while (!probe(ACK));
-    while (probe(ACK))
-        ;
+    // hold data + ready until the receiver acks
+    while (1) {
+        for (int i = 0; i < BURST; i++) {
+            if (b)
+                touch(B);
+            touch(R);
+        }
+        if (probe(A))
+            break;
+    }
+    // drop them, wait for the ack to clear
+    for (int low = 0; low < DEBOUNCE;)
+        low = probe(A) ? 0 : low + 1;
 }
 
 int main(int argc, char **argv) {
@@ -53,6 +51,10 @@ int main(int argc, char **argv) {
         perror("mmap");
         return 1;
     }
+    // three well-separated, non-strided lines both sides agree on
+    R = (st.st_size / 8) & ~63L;
+    B = (st.st_size * 3 / 8) & ~63L;
+    A = (st.st_size * 7 / 8) & ~63L;
 
     printf("Please type a message.\n");
 

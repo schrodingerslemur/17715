@@ -5,17 +5,11 @@
 #include <unistd.h>
 
 #define THRESHOLD 150
-#define READY 0x1000
-#define BIT 0x2000
-#define ACK 0x3000
+#define BURST 500
+#define DEBOUNCE 8
 
 static char *chan;
-
-static void wait(long n)
-{
-    while (n--)
-        asm volatile("" ::: "memory");
-}
+static long R, B, A; // ready, bit, ack line offsets
 
 static void touch(long off) { (void)*(volatile char *)(chan + off); }
 
@@ -23,19 +17,27 @@ static int probe(long off)
 {
     ADDR_PTR a = (ADDR_PTR)(chan + off);
     clflush(a);
-    wait(200);
     return measure_one_block_access_time(a) < THRESHOLD;
 }
 
-// wait for ready, sample the bit, then hold ack until ready drops
 static int recv_bit(void)
 {
-    while (!probe(READY))
-        ;
-    int b = probe(BIT);
-    do {
-        touch(ACK);
-    } while (probe(READY));
+    // wait for the sender to raise ready
+    for (int hi = 0; hi < DEBOUNCE;)
+        hi = probe(R) ? hi + 1 : 0;
+
+    // sample the bit, majority of a few reads
+    int ones = 0;
+    for (int i = 0; i < 5; i++)
+        ones += probe(B);
+    int b = ones >= 3;
+
+    // hold ack until the sender drops ready
+    for (int low = 0; low < DEBOUNCE;) {
+        for (int i = 0; i < BURST; i++)
+            touch(A);
+        low = probe(R) ? 0 : low + 1;
+    }
     return b;
 }
 
@@ -53,6 +55,10 @@ int main(int argc, char **argv) {
         perror("mmap");
         return 1;
     }
+    // three well-separated, non-strided lines both sides agree on
+    R = (st.st_size / 8) & ~63L;
+    B = (st.st_size * 3 / 8) & ~63L;
+    A = (st.st_size * 7 / 8) & ~63L;
 
     printf("Receiver now listening.\n");
     fflush(stdout);
