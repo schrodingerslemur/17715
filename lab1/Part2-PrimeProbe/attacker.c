@@ -5,10 +5,10 @@
 
 #define BUFF_SIZE (1 << 21)
 #define NSESTS 1024
-#define NWAYS 12 // as long as >= 4
-#define ROUNDS 100
+#define NWAYS 16 // as long as >= 4
+#define ROUNDS 200
 #define THRESHOLD 120
-#define WAITCYCLES 800
+#define WAITCYCLES 2000
 
 // waits n cycles
 static void wait(int n)
@@ -89,6 +89,17 @@ int main()
             best = score[s];
             flag = s;
         }
+
+    // DEBUG: top-5 sets, so you can see if the flag stands out (stderr only)
+    for (int n = 0; n < 5; n++)
+    {
+        int b = 0;
+        for (int s = 0; s < NSESTS; s++)
+            if (score[s] > score[b])
+                b = s;
+        fprintf(stderr, "  set %4d : %ld\n", b, score[b]);
+        score[b] = -1;
+    }
 
     printf("Flag: %d\n", flag);
     return 0;
