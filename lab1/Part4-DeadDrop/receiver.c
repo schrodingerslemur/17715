@@ -43,7 +43,8 @@ static int recv_bit(void)
 
 int main(int argc, char **argv) {
     // TODO: setup code here
-    int fd = open("./sender", O_RDONLY);
+    // map a file neither process executes, so our lines stay cold until used
+    int fd = open("../common/common.o", O_RDONLY);
     if (fd < 0) {
         perror("open");
         return 1;
