@@ -70,7 +70,9 @@ int main()
             wait(WAITCYCLES);
 
             // probe: attacker lines evicted to L3
-            // add tag (k << 16)
+            // add tag (k << 16) 8 different times
+            // 4/8 should technically be evicted to L3
+            // the other 4/8 should technically stay in L1
             for (int k = 0; k < NWAYS; k++)
             {
                 CYCLES t = measure_one_block_access_time(
