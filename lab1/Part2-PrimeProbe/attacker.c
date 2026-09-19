@@ -7,7 +7,7 @@
 #define NSESTS 1024
 #define NWAYS 12 // as long as >= 4
 #define ROUNDS 100
-#define THRESHOLD 150
+#define THRESHOLD 120
 #define WAITCYCLES 800
 
 // waits n cycles
