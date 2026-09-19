@@ -1,0 +1,6 @@
+            :  L1   L2   L3   Mem
+Minimum      :    20    20    35    22
+Bottom decile:    20    20    37   230
+Median       :    22    22    38   234
+Top decile   :    22    22    42   240
+Maximum      :    25    24   176  1350

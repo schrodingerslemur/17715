@@ -5,9 +5,9 @@
 
 #define BUFF_SIZE (1 << 21)
 #define NSESTS 1024
-#define NWAYS 16 // as long as >= 4
+#define NWAYS 8 // = L1 ways: fits L1, so no self-eviction to L3
 #define ROUNDS 200
-#define THRESHOLD 120
+#define THRESHOLD 30 // between L2 hit (~22) and L3 hit (~38)
 #define WAITCYCLES 2000
 
 // waits n cycles
@@ -52,8 +52,8 @@ int main()
         order[j] = t;
     }
 
-    // sum probe latency per L2 set over many rounds; the victim keeps one set
-    // (= flag) evicted, so it reads slowest. compare sets to each other.
+    // count slow probes per L2 set over many rounds; only the victim's set
+    // (= flag) has lines pushed out of L1 to L3, so it collects the most.
     long score[NSESTS] = {0};
 
     for (int r = 0; r < ROUNDS; r++)
@@ -69,14 +69,13 @@ int main()
 
             wait(WAITCYCLES);
 
-            // probe: the more the victim evicted us, the slower this reads
+            // probe: a slow line (>= L3) was evicted from L1 by the victim
             for (int k = 0; k < NWAYS; k++)
             {
                 CYCLES t = measure_one_block_access_time(
                     base + ((ADDR_PTR)order[k] << 16));
-                if (t > THRESHOLD * 4) // cap interrupt/outlier spikes
-                    t = THRESHOLD * 4;
-                score[s] += t;
+                if (t > THRESHOLD)
+                    score[s]++;
             }
         }
     }
