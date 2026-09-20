@@ -2,8 +2,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define SAMPLE_PROBES 1024   // probes averaged into one printed sample
-#define SLOW_THRESH 0.20     // slow-lines/probe above this == bit 1
+#define WINDOW 4000 // probe rounds per printed sample
 
 // waits n cycles
 static void wait(int n)
@@ -15,30 +14,32 @@ static void wait(int n)
 int main(int argc, char **argv)
 {
     char *buf = mmap(NULL, BUF_SIZE, PROT_READ | PROT_WRITE,
-                     MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+                     MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,
+                     -1, 0);
     if (buf == MAP_FAILED)
     {
-        perror("mmap");
+        perror("mmap (need free huge pages: cat /proc/meminfo | grep HugePages)");
         exit(EXIT_FAILURE);
     }
     memset(buf, 1, BUF_SIZE);
 
     ADDR_PTR lines[PRIME];
     for (int i = 0; i < PRIME; i++)
-        lines[i] = (ADDR_PTR)buf + (ADDR_PTR)i * 4096 + (ADDR_PTR)SET * 64;
+        lines[i] = LINE(buf, i);
 
     srand(time(NULL) ^ getpid());
 
-    printf("Receiver now listening. Oversampling set %d.\n", SET);
-    printf("Each char = one sample; look for the 10100101 pattern.\n");
+    printf("Receiver now listening. Watching L2 set %d, %d lines.\n",
+           L2_SET, PRIME);
+    printf("cols:  avg_latency   slow_lines(>%d)/probe\n", EVICT_CYCLES);
     fflush(stdout);
 
-    int col = 0;
     while (1)
     {
         CYCLES sum = 0;
-        long n = 0;
-        for (int r = 0; r < SAMPLE_PROBES; r++)
+        long n = 0, slow = 0;
+
+        for (int r = 0; r < WINDOW; r++)
         {
             for (int i = PRIME - 1; i > 0; i--)
             {
@@ -60,14 +61,14 @@ int main(int argc, char **argv)
                 {
                     sum += c;
                     n++;
+                    if (c > EVICT_CYCLES)
+                        slow++;
                 }
             }
         }
 
-        double avg = n ? (double)sum / n : 0.0;
-        printf("%.2f ", avg);
-        if (++col % 20 == 0)
-            putchar('\n');
+        printf("%6.2f      %5.2f\n",
+               n ? (double)sum / n : 0.0, (double)slow / WINDOW);
         fflush(stdout);
     }
 

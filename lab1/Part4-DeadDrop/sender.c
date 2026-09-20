@@ -2,51 +2,40 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define TEST_BYTE 0xA5 // 10100101, easy to recognize when oversampled
-
 int main(int argc, char **argv)
 {
     char *buf = mmap(NULL, BUF_SIZE, PROT_READ | PROT_WRITE,
-                     MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+                     MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,
+                     -1, 0);
     if (buf == MAP_FAILED)
     {
-        perror("mmap");
+        perror("mmap (need free huge pages: cat /proc/meminfo | grep HugePages)");
         exit(EXIT_FAILURE);
     }
     memset(buf, 1, BUF_SIZE);
 
     ADDR_PTR lines[SENDER_LINES];
     for (int i = 0; i < SENDER_LINES; i++)
-        lines[i] = (ADDR_PTR)buf + (ADDR_PTR)i * 4096 + (ADDR_PTR)SET * 64;
+        lines[i] = LINE(buf, i);
 
     srand(time(NULL) ^ getpid());
 
-    printf("Sender transmitting 0x%02X repeatedly on set %d. Ctrl-C to stop.\n",
-           TEST_BYTE, SET);
+    printf("Sender hammering L2 set %d (%d lines). Ctrl-C to stop.\n",
+           L2_SET, SENDER_LINES);
     fflush(stdout);
 
-    // step 2: keep sending a known byte so the receiver can be eyeballed
+    // constant hammer so the receiver can be checked baseline-vs-active
     while (1)
     {
-        for (int b = 7; b >= 0; b--) // MSB first
+        for (int i = SENDER_LINES - 1; i > 0; i--)
         {
-            int bit = (TEST_BYTE >> b) & 1;
-            uint64_t end = rdtsc() + BIT_CYCLES;
-
-            if (bit)
-            {
-                // hold the set busy for the whole bit period
-                while (rdtsc() < end)
-                    for (int i = 0; i < SENDER_LINES; i++)
-                        *(volatile char *)lines[i];
-            }
-            else
-            {
-                // leave the set alone for the whole bit period
-                while (rdtsc() < end)
-                    ;
-            }
+            int j = rand() % (i + 1);
+            ADDR_PTR t = lines[i];
+            lines[i] = lines[j];
+            lines[j] = t;
         }
+        for (int i = 0; i < SENDER_LINES; i++)
+            *(volatile char *)lines[i];
     }
 
     printf("Sender finished.\n");
