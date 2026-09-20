@@ -14,7 +14,7 @@
 #define SENDER_LINES 12        // enough lines to fill the 4-way set
 #define PRIME 6                // lines the receiver watches
 #define WAITCYCLES 800         // receiver gap between prime and probe
-#define BIT_CYCLES 40000000ULL // TSC cycles the sender holds each bit
+#define BIT_CYCLES 10000000ULL // TSC cycles the sender holds each bit
 #define MARKER 0x02            // start-of-message byte
 #define PREAMBLE_ZEROS 20      // low run that parks the receiver before MARKER
 

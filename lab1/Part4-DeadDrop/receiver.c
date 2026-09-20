@@ -113,22 +113,21 @@ int main(int argc, char **argv)
             ;
         unsigned char byte = read_byte(rdtsc(), thresh);
 
-        if (!in_msg)
+        // MARKER always (re)starts a message, so a dropped '\n' can't swallow
+        // the next one; 0x02 never shows up in real text.
+        if (byte == MARKER)
         {
-            if (byte == MARKER)
-            {
-                in_msg = 1;
-                len = 0;
-            }
+            in_msg = 1;
+            len = 0;
         }
-        else if (byte == '\n')
+        else if (in_msg && byte == '\n')
         {
             line[len] = '\0';
             printf("%s\n", line);
             fflush(stdout);
             in_msg = 0;
         }
-        else if (byte != MARKER && len < (int)sizeof(line) - 1)
+        else if (in_msg && len < (int)sizeof(line) - 1)
         {
             line[len++] = byte;
         }
