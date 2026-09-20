@@ -101,13 +101,13 @@ int main(int argc, char **argv)
         {
             uint64_t center = t0 + ((uint64_t)(k + 1) * BIT_CYCLES) + BIT_CYCLES / 2;
             int votes = 0;
-            for (int s = -1; s <= 1; s++)
+            for (int s = -2; s <= 2; s++) // 5 samples across the middle half
             {
-                wait_until(center + s * (BIT_CYCLES / 6));
+                wait_until(center + s * (BIT_CYCLES / 8));
                 if (measure_level(SAMPLE_WIN) > thresh)
                     votes++;
             }
-            byte = (byte << 1) | (votes >= 2);
+            byte = (byte << 1) | (votes >= 3);
         }
 
         // skip past the stop bit before hunting the next start edge
@@ -132,9 +132,9 @@ int main(int argc, char **argv)
             fflush(stdout);
             in_msg = 0;
         }
-        else if (len < (int)sizeof(line) - 1)
+        else if (byte != MARKER && len < (int)sizeof(line) - 1)
         {
-            line[len++] = byte;
+            line[len++] = byte; // ignore the second MARKER; keep real text
         }
     }
 

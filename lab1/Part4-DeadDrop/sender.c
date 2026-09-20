@@ -50,9 +50,12 @@ int main(int argc, char **argv)
     char text_buf[128];
     while (fgets(text_buf, sizeof(text_buf), stdin))
     {
-        // 0x00 warm-up absorbs first-byte edge-detection jitter, then a clean
-        // MARKER tells the receiver the real message starts here
-        send_byte(0x00);
+        // A run of real zero-bits (sender spinning, so the line reads LOW)
+        // parks the receiver out of its idle free-run; then two MARKERs give a
+        // cleanly-framed lock target.
+        for (int i = 0; i < PREAMBLE_ZEROS; i++)
+            send_bit(0);
+        send_byte(MARKER);
         send_byte(MARKER);
         // fgets keeps the trailing '\n', which the receiver uses as end marker
         for (char *p = text_buf; *p; p++)
