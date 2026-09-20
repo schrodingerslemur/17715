@@ -2,7 +2,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define WINDOW 4000 // probe rounds per printed sample
+#define WINDOW 2000 // probe rounds per printed sample
 
 // waits n cycles
 static void wait(int n)

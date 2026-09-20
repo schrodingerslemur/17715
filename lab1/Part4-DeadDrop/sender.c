@@ -2,6 +2,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#define TEST_BYTE 0xA5 // 10100101, easy to recognize when oversampled
+
 int main(int argc, char **argv)
 {
     char *buf = mmap(NULL, BUF_SIZE, PROT_READ | PROT_WRITE,
@@ -18,24 +20,31 @@ int main(int argc, char **argv)
     for (int i = 0; i < SENDER_LINES; i++)
         lines[i] = LINE(buf, i);
 
-    srand(time(NULL) ^ getpid());
-
-    printf("Sender hammering L2 set %d (%d lines). Ctrl-C to stop.\n",
-           L2_SET, SENDER_LINES);
+    printf("Sender transmitting 0x%02X repeatedly on L2 set %d. Ctrl-C to stop.\n",
+           TEST_BYTE, L2_SET);
     fflush(stdout);
 
-    // constant hammer so the receiver can be checked baseline-vs-active
     while (1)
     {
-        for (int i = SENDER_LINES - 1; i > 0; i--)
+        for (int b = 7; b >= 0; b--) // MSB first
         {
-            int j = rand() % (i + 1);
-            ADDR_PTR t = lines[i];
-            lines[i] = lines[j];
-            lines[j] = t;
+            int bit = (TEST_BYTE >> b) & 1;
+            uint64_t end = rdtsc() + BIT_CYCLES;
+
+            if (bit)
+            {
+                // hold the L2 set busy for the whole bit period
+                while (rdtsc() < end)
+                    for (int i = 0; i < SENDER_LINES; i++)
+                        *(volatile char *)lines[i];
+            }
+            else
+            {
+                // leave the set alone for the whole bit period
+                while (rdtsc() < end)
+                    ;
+            }
         }
-        for (int i = 0; i < SENDER_LINES; i++)
-            *(volatile char *)lines[i];
     }
 
     printf("Sender finished.\n");
