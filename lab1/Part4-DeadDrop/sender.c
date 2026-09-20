@@ -4,12 +4,12 @@
 
 static ADDR_PTR lines[SENDER_LINES];
 
-// hold one bit for a full bit period: 1 = hammer the L2 set, 0 = leave it idle
 static void send_bit(int bit)
 {
     uint64_t end = rdtsc() + BIT_CYCLES;
     if (bit)
     {
+        // hammer the shared L2 set for the whole bit period
         while (rdtsc() < end)
             for (int i = 0; i < SENDER_LINES; i++)
                 *(volatile char *)lines[i];
@@ -21,7 +21,7 @@ static void send_bit(int bit)
     }
 }
 
-// one framed byte: start(1), 8 data bits MSB-first, stop(0)
+// start bit, 8 data bits MSB first, stop bit
 static void send_byte(unsigned char c)
 {
     send_bit(1);
@@ -37,7 +37,7 @@ int main(int argc, char **argv)
                      -1, 0);
     if (buf == MAP_FAILED)
     {
-        perror("mmap (need free huge pages: cat /proc/meminfo | grep HugePages)");
+        perror("mmap");
         exit(EXIT_FAILURE);
     }
     memset(buf, 1, BUF_SIZE);
@@ -50,14 +50,14 @@ int main(int argc, char **argv)
     char text_buf[128];
     while (fgets(text_buf, sizeof(text_buf), stdin))
     {
-        // A run of real zero-bits (sender spinning, so the line reads LOW)
-        // parks the receiver out of its idle free-run; then two MARKERs give a
-        // cleanly-framed lock target.
+        // The zero run holds the channel low so the receiver resyncs, then the
+        // markers give it a framed byte to lock onto.
         for (int i = 0; i < PREAMBLE_ZEROS; i++)
             send_bit(0);
         send_byte(MARKER);
         send_byte(MARKER);
-        // fgets keeps the trailing '\n', which the receiver uses as end marker
+
+        // fgets keeps the trailing '\n', which ends the message
         for (char *p = text_buf; *p; p++)
             send_byte((unsigned char)*p);
     }

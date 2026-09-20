@@ -5,25 +5,21 @@
 
 #include <string.h>
 
-// ---- shared covert-channel parameters (sender and receiver must agree) ----
-// Channel: contention on one shared L2 set (siblings share L2). A 2MB huge
-// page lets us fix physical bits [20:0], so bits [15:6] pick the L2 set and
-// striding the tag by 1<<16 puts many lines in that same set.
-#define BUF_SIZE (1 << 21)     // 2MB huge page
-#define L2_SET 512             // target L2 set index (bits [15:6])
-#define TAG_STRIDE (1 << 16)   // step tag bits, keep the L2 set fixed
-#define SENDER_LINES 12        // aggressor lines (> L2 4-way, fills the set)
-#define PRIME 6                // lines the receiver primes/probes (small: keep baseline fast)
-#define EVICT_CYCLES 30        // L2(~22) vs L3(~38) boundary (from Part 2)
+// The sender and receiver run on SMT siblings, so they share the L2 cache.
+// A 2MB huge page fixes physical bits [20:0], letting both agree on one L2
+// set (bits [15:6]); striding the tag by 1<<16 puts several lines in it.
+#define BUF_SIZE (1 << 21)
+#define L2_SET 512
+#define TAG_STRIDE (1 << 16)
+#define SENDER_LINES 12        // enough lines to fill the 4-way set
+#define PRIME 6                // lines the receiver watches
 #define WAITCYCLES 800         // receiver gap between prime and probe
-#define BIT_CYCLES 40000000ULL // sender holds each bit this many TSC cycles
-#define MARKER 0x02            // start-of-message byte the receiver locks onto
-#define PREAMBLE_ZEROS 20      // low-bit run that parks the receiver before MARKER
+#define BIT_CYCLES 40000000ULL // TSC cycles the sender holds each bit
+#define MARKER 0x02            // start-of-message byte
+#define PREAMBLE_ZEROS 20      // low run that parks the receiver before MARKER
 
-// address of the i-th line in the target L2 set
 #define LINE(buf, i) ((ADDR_PTR)(buf) + (ADDR_PTR)(i) * TAG_STRIDE + ((ADDR_PTR)L2_SET << 6))
 
-// read the timestamp counter
 static inline uint64_t rdtsc(void)
 {
     uint32_t lo, hi;

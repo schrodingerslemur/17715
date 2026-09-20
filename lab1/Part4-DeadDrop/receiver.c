@@ -2,14 +2,13 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define DETECT_WIN 100     // probes per level check while hunting a start edge
-#define SAMPLE_WIN 150     // probes per level check when sampling a data bit
-#define CALIB_ROUNDS 20    // baseline calibration samples
-#define THRESH_MARGIN 9.0  // threshold = idle baseline + this (gap is ~20)
+#define DETECT_WIN 100
+#define SAMPLE_WIN 150
+#define CALIB_ROUNDS 20
+#define THRESH_MARGIN 9.0
 
 static ADDR_PTR lines[PRIME];
 
-// waits n cycles
 static void wait(int n)
 {
     while (n--)
@@ -22,12 +21,13 @@ static void wait_until(uint64_t t)
         ;
 }
 
-// average probe latency over `win` prime+probe rounds (the channel level)
-static double measure_level(int win)
+// Prime the watched set, pause, then time each line. A sender hammering the
+// same set evicts our lines to L3, which shows up as a higher average latency.
+static double measure_level(int rounds)
 {
     CYCLES sum = 0;
     long n = 0;
-    for (int r = 0; r < win; r++)
+    for (int r = 0; r < rounds; r++)
     {
         for (int i = PRIME - 1; i > 0; i--)
         {
@@ -37,15 +37,15 @@ static double measure_level(int win)
             lines[j] = t;
         }
 
-        for (int i = 0; i < PRIME; i++) // prime
+        for (int i = 0; i < PRIME; i++)
             *(volatile char *)lines[i];
 
         wait(WAITCYCLES);
 
-        for (int i = 0; i < PRIME; i++) // probe
+        for (int i = 0; i < PRIME; i++)
         {
             CYCLES c = measure_one_block_access_time(lines[i]);
-            if (c < 1000) // drop timer/context-switch outliers
+            if (c < 1000) // ignore context-switch spikes
             {
                 sum += c;
                 n++;
@@ -55,6 +55,27 @@ static double measure_level(int win)
     return n ? (double)sum / n : 0.0;
 }
 
+// Read one framed byte, sampling each data bit at its center. Every bit is
+// voted over five samples so a stray reading can't flip it.
+static unsigned char read_byte(uint64_t t0, double thresh)
+{
+    unsigned char byte = 0;
+    for (int k = 0; k < 8; k++)
+    {
+        uint64_t center = t0 + (uint64_t)(k + 1) * BIT_CYCLES + BIT_CYCLES / 2;
+        int votes = 0;
+        for (int s = -2; s <= 2; s++)
+        {
+            wait_until(center + s * (BIT_CYCLES / 8));
+            if (measure_level(SAMPLE_WIN) > thresh)
+                votes++;
+        }
+        byte = (byte << 1) | (votes >= 3);
+    }
+    wait_until(t0 + 10 * BIT_CYCLES); // step over the stop bit
+    return byte;
+}
+
 int main(int argc, char **argv)
 {
     char *buf = mmap(NULL, BUF_SIZE, PROT_READ | PROT_WRITE,
@@ -62,7 +83,7 @@ int main(int argc, char **argv)
                      -1, 0);
     if (buf == MAP_FAILED)
     {
-        perror("mmap (need free huge pages: cat /proc/meminfo | grep HugePages)");
+        perror("mmap");
         exit(EXIT_FAILURE);
     }
     memset(buf, 1, BUF_SIZE);
@@ -72,54 +93,29 @@ int main(int argc, char **argv)
 
     srand(time(NULL) ^ getpid());
 
-    // calibrate against the idle line (sender is blocked in fgets at startup)
+    // The sender is still blocked on input, so this measures the quiet channel.
     double base = 0;
     for (int k = 0; k < CALIB_ROUNDS; k++)
         base += measure_level(SAMPLE_WIN);
-    base /= CALIB_ROUNDS;
-    double thresh = base + THRESH_MARGIN;
+    double thresh = base / CALIB_ROUNDS + THRESH_MARGIN;
 
     printf("Receiver now listening.\n");
-    fprintf(stderr, "[dbg] base=%.2f thresh=%.2f\n", base, thresh);
     fflush(stdout);
 
     char line[1024];
     int len = 0;
-    int in_msg = 0; // 0 = waiting for MARKER, 1 = accumulating a message
+    int in_msg = 0;
 
     while (1)
     {
-        // hunt for a start bit: line goes high (evicted -> slow)
+        // wait for a start bit (channel goes high)
         while (measure_level(DETECT_WIN) < thresh)
             ;
-        uint64_t t0 = rdtsc(); // a hair into the start bit
-
-        // sample the 8 data bits at their centers, MSB first; each bit is
-        // majority-voted over 3 points in the middle third to shrug off noise
-        unsigned char byte = 0;
-        for (int k = 0; k < 8; k++)
-        {
-            uint64_t center = t0 + ((uint64_t)(k + 1) * BIT_CYCLES) + BIT_CYCLES / 2;
-            int votes = 0;
-            for (int s = -2; s <= 2; s++) // 5 samples across the middle half
-            {
-                wait_until(center + s * (BIT_CYCLES / 8));
-                if (measure_level(SAMPLE_WIN) > thresh)
-                    votes++;
-            }
-            byte = (byte << 1) | (votes >= 3);
-        }
-
-        // skip past the stop bit before hunting the next start edge
-        wait_until(t0 + (uint64_t)10 * BIT_CYCLES);
-
-        if (in_msg || byte == MARKER) // skip the idle-noise bytes in the log
-            fprintf(stderr, "[dbg] 0x%02X %c\n", byte,
-                    (byte >= 32 && byte < 127) ? byte : '.');
+        unsigned char byte = read_byte(rdtsc(), thresh);
 
         if (!in_msg)
         {
-            if (byte == MARKER) // real message starts now
+            if (byte == MARKER)
             {
                 in_msg = 1;
                 len = 0;
@@ -134,10 +130,9 @@ int main(int argc, char **argv)
         }
         else if (byte != MARKER && len < (int)sizeof(line) - 1)
         {
-            line[len++] = byte; // ignore the second MARKER; keep real text
+            line[len++] = byte;
         }
     }
 
-    printf("Receiver finished.\n");
     return 0;
 }
