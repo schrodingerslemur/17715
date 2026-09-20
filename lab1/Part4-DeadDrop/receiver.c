@@ -3,11 +3,10 @@
 #include <unistd.h>
 
 #define BUF_SIZE (1 << 20)
-#define SET 32        // must match sender
-#define KLINES 16     // must match sender
-#define THRESHOLD 100 // tentative L1-hit vs miss cutoff (cycles); tune from output
+#define SET 32       // must match sender
+#define PRIME 8      // prime exactly the L1 associativity so baseline is all-L1
 #define WAITCYCLES 800
-#define WINDOW 2000 // probe rounds per printed sample
+#define WINDOW 2000  // probe rounds per printed sample
 
 // waits n cycles
 static void wait(int n)
@@ -27,26 +26,26 @@ int main(int argc, char **argv)
     }
     memset(buf, 1, BUF_SIZE);
 
-    ADDR_PTR lines[KLINES];
-    for (int i = 0; i < KLINES; i++)
+    ADDR_PTR lines[PRIME];
+    for (int i = 0; i < PRIME; i++)
         lines[i] = (ADDR_PTR)buf + (ADDR_PTR)i * 4096 + (ADDR_PTR)SET * 64;
 
     srand(time(NULL) ^ getpid());
 
-    printf("Receiver now listening.\n");
-    printf("Watching set %d. avg_slow = # of %d lines slower than %d cycles.\n",
-           SET, KLINES, THRESHOLD);
+    printf("Receiver now listening. Watching set %d, priming %d lines.\n",
+           SET, PRIME);
+    printf("cols: avg  max   >40   >60   >90  >150  (counts are lines per probe)\n");
     fflush(stdout);
 
     while (1)
     {
-        long slow_sum = 0;   // total lines seen slow this window
-        CYCLES cyc_sum = 0;  // total probe latency this window
+        CYCLES cyc_sum = 0, cyc_max = 0;
+        long n40 = 0, n60 = 0, n90 = 0, n150 = 0;
         long probes = 0;
 
         for (int r = 0; r < WINDOW; r++)
         {
-            for (int i = KLINES - 1; i > 0; i--)
+            for (int i = PRIME - 1; i > 0; i--)
             {
                 int j = rand() % (i + 1);
                 ADDR_PTR t = lines[i];
@@ -55,26 +54,30 @@ int main(int argc, char **argv)
             }
 
             // prime
-            for (int i = 0; i < KLINES; i++)
+            for (int i = 0; i < PRIME; i++)
                 *(volatile char *)lines[i];
 
             wait(WAITCYCLES);
 
             // probe
-            for (int i = 0; i < KLINES; i++)
+            for (int i = 0; i < PRIME; i++)
             {
                 CYCLES c = measure_one_block_access_time(lines[i]);
                 cyc_sum += c;
+                if (c > cyc_max)
+                    cyc_max = c;
+                if (c > 40) n40++;
+                if (c > 60) n60++;
+                if (c > 90) n90++;
+                if (c > 150) n150++;
                 probes++;
-                if (c > THRESHOLD)
-                    slow_sum++;
             }
         }
 
-        double avg_slow = (double)slow_sum / WINDOW;
-        double avg_cyc = (double)cyc_sum / probes;
-        printf("avg_slow = %5.2f / %d   avg_latency = %6.2f cyc\n",
-               avg_slow, KLINES, avg_cyc);
+        printf("%5.1f %5llu  %4.2f  %4.2f  %4.2f  %4.2f\n",
+               (double)cyc_sum / probes, (unsigned long long)cyc_max,
+               (double)n40 / WINDOW, (double)n60 / WINDOW,
+               (double)n90 / WINDOW, (double)n150 / WINDOW);
         fflush(stdout);
     }
 
