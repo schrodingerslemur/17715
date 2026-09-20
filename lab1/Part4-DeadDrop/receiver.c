@@ -113,8 +113,9 @@ int main(int argc, char **argv)
         // skip past the stop bit before hunting the next start edge
         wait_until(t0 + (uint64_t)10 * BIT_CYCLES);
 
-        fprintf(stderr, "[dbg] 0x%02X %c\n", byte,
-                (byte >= 32 && byte < 127) ? byte : '.');
+        if (in_msg || byte == MARKER) // skip the idle-noise bytes in the log
+            fprintf(stderr, "[dbg] 0x%02X %c\n", byte,
+                    (byte >= 32 && byte < 127) ? byte : '.');
 
         if (!in_msg)
         {
