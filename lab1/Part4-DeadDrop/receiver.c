@@ -58,8 +58,8 @@ int main(int argc, char **argv)
         }
 
         double per_probe = (double)slow / SAMPLE_PROBES;
-        putchar(per_probe > SLOW_THRESH ? '1' : '0');
-        if (++col % 80 == 0)
+        printf("%.2f ", per_probe);
+        if (++col % 20 == 0)
             putchar('\n');
         fflush(stdout);
     }

@@ -11,7 +11,7 @@
 #define SENDER_LINES 24 // lines the sender hammers to evict the set
 #define PRIME 8         // lines the receiver primes (= L1 associativity)
 #define EVICT_CYCLES 40 // access slower than this == line was evicted (L2+)
-#define WAITCYCLES 2000 // receiver gap between prime and probe
+#define WAITCYCLES 800  // receiver gap between prime and probe
 #define BIT_CYCLES 10000000ULL // sender holds each bit this many TSC cycles
 
 // read the timestamp counter
