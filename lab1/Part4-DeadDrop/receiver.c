@@ -1,81 +1,83 @@
 #include "util.h"
-#include <fcntl.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
-#define THRESHOLD 150
-#define BURST 500
-#define DEBOUNCE 8
+#define BUF_SIZE (1 << 20)
+#define SET 32        // must match sender
+#define KLINES 16     // must match sender
+#define THRESHOLD 100 // tentative L1-hit vs miss cutoff (cycles); tune from output
+#define WAITCYCLES 800
+#define WINDOW 2000 // probe rounds per printed sample
 
-static char *chan;
-static long R, B, A; // ready, bit, ack line offsets
-
-static void touch(long off) { (void)*(volatile char *)(chan + off); }
-
-static int probe(long off)
+// waits n cycles
+static void wait(int n)
 {
-    ADDR_PTR a = (ADDR_PTR)(chan + off);
-    clflush(a);
-    return measure_one_block_access_time(a) < THRESHOLD;
+    while (n--)
+        asm volatile("" ::: "memory");
 }
 
-static int recv_bit(void)
+int main(int argc, char **argv)
 {
-    // wait for the sender to raise ready
-    for (int hi = 0; hi < DEBOUNCE;)
-        hi = probe(R) ? hi + 1 : 0;
-
-    // sample the bit, majority of a few reads
-    int ones = 0;
-    for (int i = 0; i < 5; i++)
-        ones += probe(B);
-    int b = ones >= 3;
-
-    // hold ack until the sender drops ready
-    for (int low = 0; low < DEBOUNCE;) {
-        for (int i = 0; i < BURST; i++)
-            touch(A);
-        low = probe(R) ? 0 : low + 1;
-    }
-    return b;
-}
-
-int main(int argc, char **argv) {
-    // TODO: setup code here
-    // map a file neither process executes, so our lines stay cold until used
-    int fd = open("../common/common.o", O_RDONLY);
-    if (fd < 0) {
-        perror("open");
-        return 1;
-    }
-    struct stat st;
-    fstat(fd, &st);
-    chan = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (chan == MAP_FAILED) {
+    char *buf = mmap(NULL, BUF_SIZE, PROT_READ | PROT_WRITE,
+                     MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if (buf == MAP_FAILED)
+    {
         perror("mmap");
-        return 1;
+        exit(EXIT_FAILURE);
     }
-    // three well-separated, non-strided lines both sides agree on
-    R = (st.st_size / 8) & ~63L;
-    B = (st.st_size * 3 / 8) & ~63L;
-    A = (st.st_size * 7 / 8) & ~63L;
+    memset(buf, 1, BUF_SIZE);
+
+    ADDR_PTR lines[KLINES];
+    for (int i = 0; i < KLINES; i++)
+        lines[i] = (ADDR_PTR)buf + (ADDR_PTR)i * 4096 + (ADDR_PTR)SET * 64;
+
+    srand(time(NULL) ^ getpid());
 
     printf("Receiver now listening.\n");
+    printf("Watching set %d. avg_slow = # of %d lines slower than %d cycles.\n",
+           SET, KLINES, THRESHOLD);
     fflush(stdout);
 
-    bool listening = true;
-    while (listening) {
-        // TODO: Put your covert channel code here
-        char byte[9];
-        for (int i = 0; i < 8; i++)
-            byte[i] = recv_bit() ? '1' : '0';
-        byte[8] = '\0';
-        putchar((char)strtol(byte, 0, 2));
+    while (1)
+    {
+        long slow_sum = 0;   // total lines seen slow this window
+        CYCLES cyc_sum = 0;  // total probe latency this window
+        long probes = 0;
+
+        for (int r = 0; r < WINDOW; r++)
+        {
+            for (int i = KLINES - 1; i > 0; i--)
+            {
+                int j = rand() % (i + 1);
+                ADDR_PTR t = lines[i];
+                lines[i] = lines[j];
+                lines[j] = t;
+            }
+
+            // prime
+            for (int i = 0; i < KLINES; i++)
+                *(volatile char *)lines[i];
+
+            wait(WAITCYCLES);
+
+            // probe
+            for (int i = 0; i < KLINES; i++)
+            {
+                CYCLES c = measure_one_block_access_time(lines[i]);
+                cyc_sum += c;
+                probes++;
+                if (c > THRESHOLD)
+                    slow_sum++;
+            }
+        }
+
+        double avg_slow = (double)slow_sum / WINDOW;
+        double avg_cyc = (double)cyc_sum / probes;
+        printf("avg_slow = %5.2f / %d   avg_latency = %6.2f cyc\n",
+               avg_slow, KLINES, avg_cyc);
         fflush(stdout);
     }
 
     printf("Receiver finished.\n");
-
     return 0;
 }

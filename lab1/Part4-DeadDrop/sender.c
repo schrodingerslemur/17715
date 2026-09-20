@@ -1,74 +1,53 @@
 #include "util.h"
-#include <fcntl.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
-#define THRESHOLD 150
-#define BURST 500
-#define DEBOUNCE 8
+#define BUF_SIZE (1 << 20)
+#define SET 32    // target L1d set index (bits [11:6])
+#define KLINES 16 // > L1 associativity (8) so a full touch fills/evicts the set
 
-static char *chan;
-static long R, B, A; // ready, bit, ack line offsets
-
-static void touch(long off) { (void)*(volatile char *)(chan + off); }
-
-static int probe(long off)
+// waits n cycles
+static void wait(int n)
 {
-    ADDR_PTR a = (ADDR_PTR)(chan + off);
-    clflush(a);
-    return measure_one_block_access_time(a) < THRESHOLD;
+    while (n--)
+        asm volatile("" ::: "memory");
 }
 
-static void send_bit(int b)
+int main(int argc, char **argv)
 {
-    // hold data + ready until the receiver acks
-    while (1) {
-        for (int i = 0; i < BURST; i++) {
-            if (b)
-                touch(B);
-            touch(R);
-        }
-        if (probe(A))
-            break;
-    }
-    // drop them, wait for the ack to clear
-    for (int low = 0; low < DEBOUNCE;)
-        low = probe(A) ? 0 : low + 1;
-}
-
-int main(int argc, char **argv) {
-    // TODO: setup code here
-    // map a file neither process executes, so our lines stay cold until used
-    int fd = open("../common/common.o", O_RDONLY);
-    if (fd < 0) {
-        perror("open");
-        return 1;
-    }
-    struct stat st;
-    fstat(fd, &st);
-    chan = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (chan == MAP_FAILED) {
+    char *buf = mmap(NULL, BUF_SIZE, PROT_READ | PROT_WRITE,
+                     MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if (buf == MAP_FAILED)
+    {
         perror("mmap");
-        return 1;
+        exit(EXIT_FAILURE);
     }
-    // three well-separated, non-strided lines both sides agree on
-    R = (st.st_size / 8) & ~63L;
-    B = (st.st_size * 3 / 8) & ~63L;
-    A = (st.st_size * 7 / 8) & ~63L;
+    memset(buf, 1, BUF_SIZE);
 
-    printf("Please type a message.\n");
+    // KLINES addresses, all mapping to L1 set SET, on different pages (tags)
+    ADDR_PTR lines[KLINES];
+    for (int i = 0; i < KLINES; i++)
+        lines[i] = (ADDR_PTR)buf + (ADDR_PTR)i * 4096 + (ADDR_PTR)SET * 64;
 
-    bool sending = true;
-    while (sending) {
-        char text_buf[128];
-        fgets(text_buf, sizeof(text_buf), stdin);
+    srand(time(NULL) ^ getpid());
 
-        // TODO: Put your covert channel code here
-        char *bits = string_to_binary(text_buf);
-        for (int i = 0; bits[i]; i++)
-            send_bit(bits[i] == '1');
-        free(bits);
+    printf("Sender hammering set %d (%d lines). Ctrl-C to stop.\n", SET, KLINES);
+    fflush(stdout);
+
+    // step 1: just pound the set forever so the receiver can see the signal
+    while (1)
+    {
+        // shuffle order each pass to dodge the prefetcher
+        for (int i = KLINES - 1; i > 0; i--)
+        {
+            int j = rand() % (i + 1);
+            ADDR_PTR t = lines[i];
+            lines[i] = lines[j];
+            lines[j] = t;
+        }
+        for (int i = 0; i < KLINES; i++)
+            *(volatile char *)lines[i];
+        wait(50);
     }
 
     printf("Sender finished.\n");
