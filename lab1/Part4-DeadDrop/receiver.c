@@ -3,7 +3,7 @@
 #include <unistd.h>
 
 #define DETECT_WIN 100     // probes per level check while hunting a start edge
-#define SAMPLE_WIN 300     // probes per level check when sampling a data bit
+#define SAMPLE_WIN 150     // probes per level check when sampling a data bit
 #define CALIB_ROUNDS 20    // baseline calibration samples
 #define THRESH_MARGIN 9.0  // threshold = idle baseline + this (gap is ~20)
 
@@ -80,10 +80,12 @@ int main(int argc, char **argv)
     double thresh = base + THRESH_MARGIN;
 
     printf("Receiver now listening.\n");
+    fprintf(stderr, "[dbg] base=%.2f thresh=%.2f\n", base, thresh);
     fflush(stdout);
 
     char line[1024];
     int len = 0;
+    int in_msg = 0; // 0 = waiting for MARKER, 1 = accumulating a message
 
     while (1)
     {
@@ -92,24 +94,42 @@ int main(int argc, char **argv)
             ;
         uint64_t t0 = rdtsc(); // a hair into the start bit
 
-        // sample the 8 data bits at their centers, MSB first
+        // sample the 8 data bits at their centers, MSB first; each bit is
+        // majority-voted over 3 points in the middle third to shrug off noise
         unsigned char byte = 0;
         for (int k = 0; k < 8; k++)
         {
-            wait_until(t0 + ((uint64_t)(k + 1) * BIT_CYCLES) + BIT_CYCLES / 2);
-            int bit = measure_level(SAMPLE_WIN) > thresh;
-            byte = (byte << 1) | bit;
+            uint64_t center = t0 + ((uint64_t)(k + 1) * BIT_CYCLES) + BIT_CYCLES / 2;
+            int votes = 0;
+            for (int s = -1; s <= 1; s++)
+            {
+                wait_until(center + s * (BIT_CYCLES / 6));
+                if (measure_level(SAMPLE_WIN) > thresh)
+                    votes++;
+            }
+            byte = (byte << 1) | (votes >= 2);
         }
 
         // skip past the stop bit before hunting the next start edge
         wait_until(t0 + (uint64_t)10 * BIT_CYCLES);
 
-        if (byte == '\n')
+        fprintf(stderr, "[dbg] 0x%02X %c\n", byte,
+                (byte >= 32 && byte < 127) ? byte : '.');
+
+        if (!in_msg)
+        {
+            if (byte == MARKER) // real message starts now
+            {
+                in_msg = 1;
+                len = 0;
+            }
+        }
+        else if (byte == '\n')
         {
             line[len] = '\0';
             printf("%s\n", line);
             fflush(stdout);
-            len = 0;
+            in_msg = 0;
         }
         else if (len < (int)sizeof(line) - 1)
         {

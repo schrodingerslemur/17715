@@ -17,6 +17,7 @@
 #define EVICT_CYCLES 30        // L2(~22) vs L3(~38) boundary (from Part 2)
 #define WAITCYCLES 800         // receiver gap between prime and probe
 #define BIT_CYCLES 40000000ULL // sender holds each bit this many TSC cycles
+#define MARKER 0x02            // start-of-message byte the receiver locks onto
 
 // address of the i-th line in the target L2 set
 #define LINE(buf, i) ((ADDR_PTR)(buf) + (ADDR_PTR)(i) * TAG_STRIDE + ((ADDR_PTR)L2_SET << 6))
