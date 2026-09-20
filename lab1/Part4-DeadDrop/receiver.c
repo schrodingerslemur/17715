@@ -36,7 +36,8 @@ int main(int argc, char **argv)
     int col = 0;
     while (1)
     {
-        long slow = 0;
+        CYCLES sum = 0;
+        long n = 0;
         for (int r = 0; r < SAMPLE_PROBES; r++)
         {
             for (int i = PRIME - 1; i > 0; i--)
@@ -53,12 +54,18 @@ int main(int argc, char **argv)
             wait(WAITCYCLES);
 
             for (int i = 0; i < PRIME; i++) // probe
-                if (measure_one_block_access_time(lines[i]) > EVICT_CYCLES)
-                    slow++;
+            {
+                CYCLES c = measure_one_block_access_time(lines[i]);
+                if (c < 1000) // drop timer/context-switch outliers
+                {
+                    sum += c;
+                    n++;
+                }
+            }
         }
 
-        double per_probe = (double)slow / SAMPLE_PROBES;
-        printf("%.2f ", per_probe);
+        double avg = n ? (double)sum / n : 0.0;
+        printf("%.2f ", avg);
         if (++col % 20 == 0)
             putchar('\n');
         fflush(stdout);
