@@ -2,11 +2,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define BUF_SIZE (1 << 20)
-#define SET 32       // must match sender
-#define PRIME 8      // prime exactly the L1 associativity so baseline is all-L1
-#define WAITCYCLES 800
-#define WINDOW 2000  // probe rounds per printed sample
+#define SAMPLE_PROBES 256    // probes averaged into one printed sample
+#define SLOW_THRESH 0.20     // slow-lines/probe above this == bit 1
 
 // waits n cycles
 static void wait(int n)
@@ -32,18 +29,15 @@ int main(int argc, char **argv)
 
     srand(time(NULL) ^ getpid());
 
-    printf("Receiver now listening. Watching set %d, priming %d lines.\n",
-           SET, PRIME);
-    printf("cols: avg  max   >40   >60   >90  >150  (counts are lines per probe)\n");
+    printf("Receiver now listening. Oversampling set %d.\n", SET);
+    printf("Each char = one sample; look for the 10100101 pattern.\n");
     fflush(stdout);
 
+    int col = 0;
     while (1)
     {
-        CYCLES cyc_sum = 0, cyc_max = 0;
-        long n40 = 0, n60 = 0, n90 = 0, n150 = 0;
-        long probes = 0;
-
-        for (int r = 0; r < WINDOW; r++)
+        long slow = 0;
+        for (int r = 0; r < SAMPLE_PROBES; r++)
         {
             for (int i = PRIME - 1; i > 0; i--)
             {
@@ -53,31 +47,20 @@ int main(int argc, char **argv)
                 lines[j] = t;
             }
 
-            // prime
-            for (int i = 0; i < PRIME; i++)
+            for (int i = 0; i < PRIME; i++) // prime
                 *(volatile char *)lines[i];
 
             wait(WAITCYCLES);
 
-            // probe
-            for (int i = 0; i < PRIME; i++)
-            {
-                CYCLES c = measure_one_block_access_time(lines[i]);
-                cyc_sum += c;
-                if (c > cyc_max)
-                    cyc_max = c;
-                if (c > 40) n40++;
-                if (c > 60) n60++;
-                if (c > 90) n90++;
-                if (c > 150) n150++;
-                probes++;
-            }
+            for (int i = 0; i < PRIME; i++) // probe
+                if (measure_one_block_access_time(lines[i]) > EVICT_CYCLES)
+                    slow++;
         }
 
-        printf("%5.1f %5llu  %4.2f  %4.2f  %4.2f  %4.2f\n",
-               (double)cyc_sum / probes, (unsigned long long)cyc_max,
-               (double)n40 / WINDOW, (double)n60 / WINDOW,
-               (double)n90 / WINDOW, (double)n150 / WINDOW);
+        double per_probe = (double)slow / SAMPLE_PROBES;
+        putchar(per_probe > SLOW_THRESH ? '1' : '0');
+        if (++col % 80 == 0)
+            putchar('\n');
         fflush(stdout);
     }
 

@@ -2,16 +2,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define BUF_SIZE (1 << 20)
-#define SET 32    // target L1d set index (bits [11:6])
-#define KLINES 16 // > L1 associativity (8) so a full touch fills/evicts the set
-
-// waits n cycles
-static void wait(int n)
-{
-    while (n--)
-        asm volatile("" ::: "memory");
-}
+#define TEST_BYTE 0xA5 // 10100101, easy to recognize when oversampled
 
 int main(int argc, char **argv)
 {
@@ -24,30 +15,38 @@ int main(int argc, char **argv)
     }
     memset(buf, 1, BUF_SIZE);
 
-    // KLINES addresses, all mapping to L1 set SET, on different pages (tags)
-    ADDR_PTR lines[KLINES];
-    for (int i = 0; i < KLINES; i++)
+    ADDR_PTR lines[SENDER_LINES];
+    for (int i = 0; i < SENDER_LINES; i++)
         lines[i] = (ADDR_PTR)buf + (ADDR_PTR)i * 4096 + (ADDR_PTR)SET * 64;
 
     srand(time(NULL) ^ getpid());
 
-    printf("Sender hammering set %d (%d lines). Ctrl-C to stop.\n", SET, KLINES);
+    printf("Sender transmitting 0x%02X repeatedly on set %d. Ctrl-C to stop.\n",
+           TEST_BYTE, SET);
     fflush(stdout);
 
-    // step 1: just pound the set forever so the receiver can see the signal
+    // step 2: keep sending a known byte so the receiver can be eyeballed
     while (1)
     {
-        // shuffle order each pass to dodge the prefetcher
-        for (int i = KLINES - 1; i > 0; i--)
+        for (int b = 7; b >= 0; b--) // MSB first
         {
-            int j = rand() % (i + 1);
-            ADDR_PTR t = lines[i];
-            lines[i] = lines[j];
-            lines[j] = t;
+            int bit = (TEST_BYTE >> b) & 1;
+            uint64_t end = rdtsc() + BIT_CYCLES;
+
+            if (bit)
+            {
+                // hold the set busy for the whole bit period
+                while (rdtsc() < end)
+                    for (int i = 0; i < SENDER_LINES; i++)
+                        *(volatile char *)lines[i];
+            }
+            else
+            {
+                // leave the set alone for the whole bit period
+                while (rdtsc() < end)
+                    ;
+            }
         }
-        for (int i = 0; i < KLINES; i++)
-            *(volatile char *)lines[i];
-        wait(50);
     }
 
     printf("Sender finished.\n");
