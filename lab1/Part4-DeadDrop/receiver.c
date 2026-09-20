@@ -2,7 +2,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define SAMPLE_PROBES 256    // probes averaged into one printed sample
+#define SAMPLE_PROBES 1024   // probes averaged into one printed sample
 #define SLOW_THRESH 0.20     // slow-lines/probe above this == bit 1
 
 // waits n cycles

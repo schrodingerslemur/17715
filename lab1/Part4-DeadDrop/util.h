@@ -12,7 +12,7 @@
 #define PRIME 8         // lines the receiver primes (= L1 associativity)
 #define EVICT_CYCLES 40 // access slower than this == line was evicted (L2+)
 #define WAITCYCLES 5000 // receiver gap between prime and probe (let sender evict)
-#define BIT_CYCLES 10000000ULL // sender holds each bit this many TSC cycles
+#define BIT_CYCLES 40000000ULL // sender holds each bit this many TSC cycles
 
 // read the timestamp counter
 static inline uint64_t rdtsc(void)
