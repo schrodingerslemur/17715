@@ -2,19 +2,12 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define DETECT_WIN 100
-#define SAMPLE_WIN 150
+#define DETECT_WIN 100 // probes used to check for a start bit
+#define SAMPLE_WIN 150 // probes used to read one data bit
 #define CALIB_ROUNDS 20
 #define THRESH_MARGIN 9.0
 
-#define DEBUG 0
-
 static ADDR_PTR lines[PRIME];
-
-#if DEBUG
-static int dbg_votes[8];
-static double dbg_lvl[8];
-#endif
 
 static void wait(int n)
 {
@@ -22,26 +15,27 @@ static void wait(int n)
         asm volatile("" ::: "memory");
 }
 
-static void wait_until(uint64_t t)
+static void wait_until(uint64_t deadline)
 {
-    while (rdtsc() < t)
+    while (rdtsc() < deadline)
         ;
 }
 
-// Prime the watched set, pause, then time each line. A sender hammering the
-// same set evicts our lines to L3, which shows up as a higher average latency.
+// Prime our lines, pause, then time them. If the sender is hammering the same
+// set our lines get pushed to L3, so a busy channel reads as a higher latency.
 static double measure_level(int rounds)
 {
     CYCLES sum = 0;
-    long n = 0;
+    long count = 0;
+
     for (int r = 0; r < rounds; r++)
     {
         for (int i = PRIME - 1; i > 0; i--)
         {
             int j = rand() % (i + 1);
-            ADDR_PTR t = lines[i];
+            ADDR_PTR tmp = lines[i];
             lines[i] = lines[j];
-            lines[j] = t;
+            lines[j] = tmp;
         }
 
         for (int i = 0; i < PRIME; i++)
@@ -52,42 +46,42 @@ static double measure_level(int rounds)
         for (int i = 0; i < PRIME; i++)
         {
             CYCLES c = measure_one_block_access_time(lines[i]);
-            if (c < 1000) // ignore context-switch spikes
+            if (c < 1000) // skip context-switch spikes
             {
                 sum += c;
-                n++;
+                count++;
             }
         }
     }
-    return n ? (double)sum / n : 0.0;
+
+    return count ? (double)sum / count : 0.0;
 }
 
-// Read one framed byte, sampling each data bit at its center. Every bit is
-// voted over five samples so a stray reading can't flip it.
+// Read one bit: sample five times around its center and take the majority.
+static int read_bit(uint64_t center, double thresh)
+{
+    int highs = 0;
+    for (int s = -2; s <= 2; s++)
+    {
+        wait_until(center + s * (BIT_CYCLES / 8));
+        if (measure_level(SAMPLE_WIN) > thresh)
+            highs++;
+    }
+    return highs >= 3;
+}
+
+// Read a framed byte: 8 data bits (MSB first) starting one bit after t0.
 static unsigned char read_byte(uint64_t t0, double thresh)
 {
     unsigned char byte = 0;
     for (int k = 0; k < 8; k++)
     {
         uint64_t center = t0 + (uint64_t)(k + 1) * BIT_CYCLES + BIT_CYCLES / 2;
-        int votes = 0;
-        double lsum = 0;
-        for (int s = -2; s <= 2; s++)
-        {
-            wait_until(center + s * (BIT_CYCLES / 8));
-            double lvl = measure_level(SAMPLE_WIN);
-            lsum += lvl;
-            if (lvl > thresh)
-                votes++;
-        }
-#if DEBUG
-        dbg_votes[k] = votes;
-        dbg_lvl[k] = lsum / 5;
-#endif
-        byte = (byte << 1) | (votes >= 3);
+        byte = (byte << 1) | read_bit(center, thresh);
     }
-    // stop mid stop-bit (line low) so the caller catches the real rising edge
-    // of the next start bit instead of latching late and drifting
+
+    // Stop halfway through the stop bit, while the line is low, so the next
+    // start bit is caught on its rising edge rather than latched late.
     wait_until(t0 + 9 * BIT_CYCLES + BIT_CYCLES / 2);
     return byte;
 }
@@ -109,7 +103,7 @@ int main(int argc, char **argv)
 
     srand(time(NULL) ^ getpid());
 
-    // The sender is still blocked on input, so this measures the quiet channel.
+    // The sender is still blocked on input, so this reads the idle latency.
     double base = 0;
     for (int k = 0; k < CALIB_ROUNDS; k++)
         base += measure_level(SAMPLE_WIN);
@@ -117,9 +111,6 @@ int main(int argc, char **argv)
 
     printf("Receiver now listening.\n");
     fflush(stdout);
-#if DEBUG
-    fprintf(stderr, "base=%.1f thresh=%.1f\n", base / CALIB_ROUNDS, thresh);
-#endif
 
     char line[1024];
     int len = 0;
@@ -127,27 +118,11 @@ int main(int argc, char **argv)
 
     while (1)
     {
-        // wait for a start bit (channel goes high)
-        while (measure_level(DETECT_WIN) < thresh)
+        while (measure_level(DETECT_WIN) < thresh) // wait for a start bit
             ;
         unsigned char byte = read_byte(rdtsc(), thresh);
 
-#if DEBUG
-        if (in_msg || byte == MARKER)
-        {
-            fprintf(stderr, "0x%02X %c  v=", byte,
-                    (byte >= 32 && byte < 127) ? byte : '.');
-            for (int k = 0; k < 8; k++)
-                fprintf(stderr, "%d", dbg_votes[k]);
-            fprintf(stderr, "  L=");
-            for (int k = 0; k < 8; k++)
-                fprintf(stderr, " %.0f", dbg_lvl[k]);
-            fprintf(stderr, "\n");
-        }
-#endif
-
-        // MARKER always (re)starts a message, so a dropped '\n' can't swallow
-        // the next one; 0x02 never shows up in real text.
+        // MARKER always starts a fresh message (\n)
         if (byte == MARKER)
         {
             in_msg = 1;
