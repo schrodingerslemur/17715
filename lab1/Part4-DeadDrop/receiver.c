@@ -86,7 +86,9 @@ static unsigned char read_byte(uint64_t t0, double thresh)
 #endif
         byte = (byte << 1) | (votes >= 3);
     }
-    wait_until(t0 + 10 * BIT_CYCLES); // step over the stop bit
+    // stop mid stop-bit (line low) so the caller catches the real rising edge
+    // of the next start bit instead of latching late and drifting
+    wait_until(t0 + 9 * BIT_CYCLES + BIT_CYCLES / 2);
     return byte;
 }
 
