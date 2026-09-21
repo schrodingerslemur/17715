@@ -2,12 +2,12 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define DETECT_WIN 100 // probes used to check for a start bit
-#define SAMPLE_WIN 150 // probes used to read one data bit
-#define CALIB_ROUNDS 20
-#define THRESH_MARGIN 9.0
+#define DETECT_WIN 100 // wins for start bit
+#define SAMPLE_WIN 150 // wins for each data bit
+#define CALIB_ROUNDS 20 // num idle measurements from preamble zeros
+#define THRESH_MARGIN 9.0 //
 
-static ADDR_PTR lines[PRIME];
+static ADDR_PTR lines[PRIME]; // 6 lines
 
 static void wait(int n)
 {

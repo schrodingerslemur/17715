@@ -6,12 +6,12 @@ static ADDR_PTR lines[SENDER_LINES];
 
 static void send_bit(int bit)
 {
-    uint64_t end = rdtsc() + BIT_CYCLES;
+    uint64_t end = rdtsc() + BIT_CYCLES; 
     if (bit)
     {
-        // hammer the shared L2 set for the whole bit period
+        // hammer the shared L2 set for the whole bit period (100....0 some cycles)
         while (rdtsc() < end)
-            for (int i = 0; i < SENDER_LINES; i++)
+            for (int i = 0; i < SENDER_LINES; i++) // 12 different lines
                 *(volatile char *)lines[i];
     }
     else
@@ -21,7 +21,7 @@ static void send_bit(int bit)
     }
 }
 
-// start bit, 8 data bits MSB first, stop bit
+// start bit, 8 data bits MSB first, stop bit (total 10 bits)
 static void send_byte(unsigned char c)
 {
     send_bit(1);
@@ -31,7 +31,8 @@ static void send_byte(unsigned char c)
 }
 
 int main(int argc, char **argv)
-{
+{   
+    // allocate page 2 MiB
     char *buf = mmap(NULL, BUF_SIZE, PROT_READ | PROT_WRITE,
                      MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,
                      -1, 0);
@@ -41,17 +42,18 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
     memset(buf, 1, BUF_SIZE);
+    
 
+    // addresses for send_bit
     for (int i = 0; i < SENDER_LINES; i++)
-        lines[i] = LINE(buf, i);
+        lines[i] = LINE(buf, i); 
 
     printf("Please type a message.\n");
 
     char text_buf[128];
     while (fgets(text_buf, sizeof(text_buf), stdin))
     {
-        // The zero run holds the channel low so the receiver resyncs, then the
-        // markers give it a framed byte to lock onto.
+        // low hold preamble
         for (int i = 0; i < PREAMBLE_ZEROS; i++)
             send_bit(0);
         send_byte(MARKER);
