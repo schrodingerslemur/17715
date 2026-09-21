@@ -7,7 +7,14 @@
 #define CALIB_ROUNDS 20
 #define THRESH_MARGIN 9.0
 
+#define DEBUG 1 // set to 0 before submitting
+
 static ADDR_PTR lines[PRIME];
+
+#if DEBUG
+static int dbg_votes[8];
+static double dbg_lvl[8];
+#endif
 
 static void wait(int n)
 {
@@ -64,12 +71,19 @@ static unsigned char read_byte(uint64_t t0, double thresh)
     {
         uint64_t center = t0 + (uint64_t)(k + 1) * BIT_CYCLES + BIT_CYCLES / 2;
         int votes = 0;
+        double lsum = 0;
         for (int s = -2; s <= 2; s++)
         {
             wait_until(center + s * (BIT_CYCLES / 8));
-            if (measure_level(SAMPLE_WIN) > thresh)
+            double lvl = measure_level(SAMPLE_WIN);
+            lsum += lvl;
+            if (lvl > thresh)
                 votes++;
         }
+#if DEBUG
+        dbg_votes[k] = votes;
+        dbg_lvl[k] = lsum / 5;
+#endif
         byte = (byte << 1) | (votes >= 3);
     }
     wait_until(t0 + 10 * BIT_CYCLES); // step over the stop bit
@@ -101,6 +115,9 @@ int main(int argc, char **argv)
 
     printf("Receiver now listening.\n");
     fflush(stdout);
+#if DEBUG
+    fprintf(stderr, "base=%.1f thresh=%.1f\n", base / CALIB_ROUNDS, thresh);
+#endif
 
     char line[1024];
     int len = 0;
@@ -112,6 +129,20 @@ int main(int argc, char **argv)
         while (measure_level(DETECT_WIN) < thresh)
             ;
         unsigned char byte = read_byte(rdtsc(), thresh);
+
+#if DEBUG
+        if (in_msg || byte == MARKER)
+        {
+            fprintf(stderr, "0x%02X %c  v=", byte,
+                    (byte >= 32 && byte < 127) ? byte : '.');
+            for (int k = 0; k < 8; k++)
+                fprintf(stderr, "%d", dbg_votes[k]);
+            fprintf(stderr, "  L=");
+            for (int k = 0; k < 8; k++)
+                fprintf(stderr, " %.0f", dbg_lvl[k]);
+            fprintf(stderr, "\n");
+        }
+#endif
 
         // MARKER always (re)starts a message, so a dropped '\n' can't swallow
         // the next one; 0x02 never shows up in real text.
