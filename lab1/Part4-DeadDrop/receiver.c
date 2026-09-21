@@ -7,7 +7,7 @@
 #define CALIB_ROUNDS 20
 #define THRESH_MARGIN 9.0
 
-#define DEBUG 1 // set to 0 before submitting
+#define DEBUG 0
 
 static ADDR_PTR lines[PRIME];
 
