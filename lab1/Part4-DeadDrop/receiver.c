@@ -148,13 +148,6 @@ int main(int argc, char **argv)
             line[len] = byte;
             len++;
         }
-        else
-        {
-            line[len] = '\0';
-            printf("%s\n", line);
-            fflush(stdout);
-            in_msg = 0;
-        }
     }
 
     printf("Receiver finished.\n");
