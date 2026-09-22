@@ -29,7 +29,7 @@ static double get_latency(int rounds)
     for (int r = 0; r < rounds; r++)
     {
         // fisher yates
-        for (int i = NSENDER_LINES - 1; i > 0; i--)
+        for (int i = NRECEIVER_LINES - 1; i > 0; i--)
         {
             int j = rand() % (i + 1);
             ADDR_PTR tmp = lines[i];
@@ -38,7 +38,7 @@ static double get_latency(int rounds)
         }
 
         // prime 6 random lines
-        for (int i = 0; i < NSENDER_LINES; i++)
+        for (int i = 0; i < NRECEIVER_LINES; i++)
         {
             *(char *)lines[i];
         }
@@ -46,7 +46,7 @@ static double get_latency(int rounds)
         wait(WAIT_CYCLES);
 
         // probe the same 6 lines
-        for (int i = 0; i < NSENDER_LINES; i++)
+        for (int i = 0; i < NRECEIVER_LINES; i++)
         {
             CYCLES c = measure_one_block_access_time(lines[i]);
             if (c < 1000) // if too big, ignore
@@ -100,7 +100,7 @@ int main(int argc, char **argv)
     }
     memset(buf, 1, BUF_SIZE);
 
-    for (int i = 0; i < NSENDER_LINES; i++)
+    for (int i = 0; i < NRECEIVER_LINES; i++)
         lines[i] = LINE(buf, i);
 
     srand(time(NULL) ^ getpid());

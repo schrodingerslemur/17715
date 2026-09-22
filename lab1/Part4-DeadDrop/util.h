@@ -9,7 +9,7 @@
 #define TARGET_SET 512 // arbitrary as long as < 1024
 
 #define NSENDER_LINES 12
-#define NRECEIVER_LINES 4
+#define NRECEIVER_LINES 6
 #define NCYCLES 10000000
 #define NLEADING_ZEROS 20
 #define LEADING_BYTE 0x02
