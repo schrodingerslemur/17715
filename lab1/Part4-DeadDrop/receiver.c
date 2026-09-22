@@ -84,7 +84,7 @@ static unsigned char read_byte(CYCLES start, double threshold)
         byte = (byte << 1) | read_bit(center, threshold);
     }
 
-    wait_until(center + 9.5 * NCYCLES); // halfway through stop bit
+    wait_until(start + 9.5 * NCYCLES); // halfway through stop bit
     return byte;
 }
 
