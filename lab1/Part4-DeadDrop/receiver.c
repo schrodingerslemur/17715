@@ -81,7 +81,7 @@ static unsigned char read_byte(CYCLES start, double threshold)
     for (int i = 0; i < 8; i++)
     {
         center = start + (CYCLES)(i + 1) * NCYCLES + NCYCLES / 2;
-        byte = (byte << 1) | read_byte(center, threshold);
+        byte = (byte << 1) | read_bit(center, threshold);
     }
 
     wait_until(center + 9.5 * NCYCLES); // halfway through stop bit
