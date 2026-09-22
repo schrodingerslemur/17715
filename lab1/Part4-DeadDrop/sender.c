@@ -22,6 +22,7 @@ static void send_bit(int bit)
     else
     {
         while (rdtsc() < end)
+            ;
     }
 }
 
@@ -44,7 +45,7 @@ int main(int argc, char **argv)
     if (buf == MAP_FAILED)
     {
         perror("mmap");
-        exit(1)
+        exit(1);
     }
     memset(buf, 1, BUF_SIZE);
 
