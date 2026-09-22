@@ -66,7 +66,7 @@ static int read_bit(CYCLES center, double threshold)
     // read the middle 5 intervals
     for (int i = -2; i <= 2; i++)
     {
-        wait_until(center + s * (NCYCLES / 8));
+        wait_until(center + i * (NCYCLES / 8));
         if (get_latency(DATA_ROUNDS) > threshold)
             high++;
     }
