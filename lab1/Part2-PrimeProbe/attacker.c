@@ -51,8 +51,7 @@ int main()
         order[j] = t;
     }
 
-    // count slow probes per L2 set over many rounds; only the victim's set
-    // (= flag) has lines pushed out of L1 to L3, so it collects the most.
+    // victim set pushed from L1 or L2 to L3
     long score[NSESTS] = {0}; // 1024
 
     for (int r = 0; r < ROUNDS; r++)

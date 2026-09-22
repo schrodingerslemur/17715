@@ -67,7 +67,7 @@ int main(void)
         return 1;
     }
 
-    // one probe line per group gi_r0 sits at ENTRY + i*STRIDE, its own set
+    // one probe line per group g*. only look at entries (i.e *_r0)
     ADDR_PTR addr[NGROUPS]; // 22 groups
     for (int i = 0; i < NGROUPS; i++)
         addr[i] = (ADDR_PTR)(vic + ENTRY + i * STRIDE);
