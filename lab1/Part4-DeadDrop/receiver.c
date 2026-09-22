@@ -76,10 +76,11 @@ static int read_bit(CYCLES center, double threshold)
 
 static unsigned char read_byte(CYCLES start, double threshold)
 {
+    CYCLES center;
     unsigned char byte = 0;
     for (int i = 0; i < 8; i++)
     {
-        CYCLES center = start + (CYCLES)(i + 1) * NCYCLES + NCYCLES / 2;
+        center = start + (CYCLES)(i + 1) * NCYCLES + NCYCLES / 2;
         byte = (byte << 1) | read_byte(center, threshold);
     }
 

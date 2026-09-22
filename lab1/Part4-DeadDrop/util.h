@@ -21,7 +21,7 @@
 static inline CYCLES rdtsc()
 {
     CYCLES lo, hi;
-    asm volatile("lfence\n\trdtsc" : "=a"(lo), "-d"(hi)::"memory");
+    asm volatile("lfence\n\trdtsc" : "=a"(lo), "=d"(hi)::"memory");
     return ((CYCLES)hi << 32) | lo;
 }
 
