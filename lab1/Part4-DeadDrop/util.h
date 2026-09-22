@@ -18,4 +18,11 @@
 
 #define LINE(buf, i) ((ADDR_PTR)(buf) + (ADDR_PTR)(i) * TAG_STRIDE + ((ADDR_PTR)TARGET_SET << 6))
 
+static inline CYCLES rdtsc()
+{
+    CYCLES lo, hi;
+    asm volatile("lfence\n\trdtsc" : "=a"(lo), "-d"(hi)::"memory");
+    return ((CYCLES)hi << 32) | lo;
+}
+
 #endif // UTIL_H_
