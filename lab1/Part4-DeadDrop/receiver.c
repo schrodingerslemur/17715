@@ -1,5 +1,6 @@
 #include "util.h"
 #include <sys/mman.h>
+#include <unistd.h>
 
 // more rounds for data for reliability
 // less rounds for start for quicker
@@ -79,10 +80,10 @@ static unsigned char read_byte(CYCLES start, double threshold)
     for (int i = 0; i < 8; i++)
     {
         CYCLES center = start + (CYCLES)(i + 1) * NCYCLES + NCYCLES / 2;
-        byte = (byte << 1) | read_bite(center, threshold);
+        byte = (byte << 1) | read_byte(center, threshold);
     }
 
-    wait_until(center + 9.5 * BIT_CYCLES); // halfway through stop bit
+    wait_until(center + 9.5 * NCYCLES); // halfway through stop bit
     return byte;
 }
 
@@ -94,7 +95,7 @@ int main(int argc, char **argv)
     if (buf == MAP_FAILED)
     {
         perror("mmap");
-        exit(1)
+        exit(1);
     }
     memset(buf, 1, BUF_SIZE);
 
