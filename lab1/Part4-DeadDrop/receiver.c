@@ -1,13 +1,12 @@
 #include "util.h"
 #include <sys/mman.h>
-#include <unistd.h>
 
-#define DETECT_WIN 100 // wins for start bit
-#define SAMPLE_WIN 150 // wins for each data bit
-#define CALIB_ROUNDS 20 // num idle measurements from preamble zeros
-#define THRESH_MARGIN 9.0 //
+// more rounds for data for reliability
+// less rounds for start for quicker
+#define START_ROUNDS 100
+#define DATA_ROUNDS 150
 
-static ADDR_PTR lines[PRIME]; // 6 lines
+static ADDR_PTR lines[NRECEIVER_LINES];
 
 static void wait(int n)
 {
@@ -15,22 +14,21 @@ static void wait(int n)
         asm volatile("" ::: "memory");
 }
 
-static void wait_until(uint64_t deadline)
+static void wait_until(CYCLES deadline)
 {
     while (rdtsc() < deadline)
         ;
 }
 
-// Prime our lines, pause, then time them. If the sender is hammering the same
-// set our lines get pushed to L3, so a busy channel reads as a higher latency.
-static double measure_level(int rounds)
+static double get_latency(int rounds)
 {
-    CYCLES sum = 0;
-    long count = 0;
+    double sum = 0;
+    double count = 0;
 
     for (int r = 0; r < rounds; r++)
     {
-        for (int i = PRIME - 1; i > 0; i--)
+        // fisher yates
+        for (int i = NSENDER_LINES - 1; i > 0; i--)
         {
             int j = rand() % (i + 1);
             ADDR_PTR tmp = lines[i];
@@ -38,15 +36,19 @@ static double measure_level(int rounds)
             lines[j] = tmp;
         }
 
-        for (int i = 0; i < PRIME; i++)
-            *(volatile char *)lines[i];
+        // prime 6 random lines
+        for (int i = 0; i < NSENDER_LINES; i++)
+        {
+            *(char *)lines[i];
+        }
 
-        wait(WAITCYCLES);
+        wait(WAIT_CYCLES);
 
-        for (int i = 0; i < PRIME; i++)
+        // probe the same 6 lines
+        for (int i = 0; i < NSENDER_LINES; i++)
         {
             CYCLES c = measure_one_block_access_time(lines[i]);
-            if (c < 1000) // skip context-switch spikes
+            if (c < 1000) // if too big, ignore
             {
                 sum += c;
                 count++;
@@ -54,60 +56,61 @@ static double measure_level(int rounds)
         }
     }
 
-    return count ? (double)sum / count : 0.0;
+    return count ? sum / count : 0.0;
 }
 
-// Read one bit: sample five times around its center and take the majority.
-static int read_bit(uint64_t center, double thresh)
+static int read_bit(CYCLES center, double threshold)
 {
-    int highs = 0;
-    for (int s = -2; s <= 2; s++)
+    int high = 0;
+    // take 8 intervals per NCYCLES
+    // read the middle 5 intervals
+    for (int i = -2; i <= 2; i++)
     {
-        wait_until(center + s * (BIT_CYCLES / 8));
-        if (measure_level(SAMPLE_WIN) > thresh)
-            highs++;
+        wait_until(center + s * (NCYCLES / 8));
+        if (get_latency(DATA_ROUNDS) > threshold)
+            high++;
     }
-    return highs >= 3;
+    return high >= 3;
 }
 
-// Read a framed byte: 8 data bits (MSB first) starting one bit after t0.
-static unsigned char read_byte(uint64_t t0, double thresh)
+static unsigned char read_byte(CYCLES start, double threshold)
 {
     unsigned char byte = 0;
-    for (int k = 0; k < 8; k++)
+    for (int i = 0; i < 8; i++)
     {
-        uint64_t center = t0 + (uint64_t)(k + 1) * BIT_CYCLES + BIT_CYCLES / 2;
-        byte = (byte << 1) | read_bit(center, thresh);
+        CYCLES center = start + (CYCLES)(i + 1) * NCYCLES + NCYCLES / 2;
+        byte = (byte << 1) | read_bite(center, threshold);
     }
 
-    // Stop halfway through the stop bit, while the line is low, so the next
-    // start bit is caught on its rising edge rather than latched late.
-    wait_until(t0 + 9 * BIT_CYCLES + BIT_CYCLES / 2);
+    wait_until(center + 9.5 * BIT_CYCLES); // halfway through stop bit
     return byte;
 }
 
 int main(int argc, char **argv)
 {
+    // TODO: setup code here
     char *buf = mmap(NULL, BUF_SIZE, PROT_READ | PROT_WRITE,
-                     MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,
-                     -1, 0);
+                     MAP_POPULATE | MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB, -1, 0);
     if (buf == MAP_FAILED)
     {
         perror("mmap");
-        exit(EXIT_FAILURE);
+        exit(1)
     }
     memset(buf, 1, BUF_SIZE);
 
-    for (int i = 0; i < PRIME; i++)
+    for (int i = 0; i < NSENDER_LINES; i++)
         lines[i] = LINE(buf, i);
 
     srand(time(NULL) ^ getpid());
 
-    // The sender is still blocked on input, so this reads the idle latency.
+    // calibrate with idle latency
+    // get threshold
     double base = 0;
-    for (int k = 0; k < CALIB_ROUNDS; k++)
-        base += measure_level(SAMPLE_WIN);
-    double thresh = base / CALIB_ROUNDS + THRESH_MARGIN;
+    for (int i = 0; i < 20; i++)
+    {
+        base += get_latency(DATA_ROUNDS);
+    }
+    double threshold = base / 20 + 9; // 9 additional cycles
 
     printf("Receiver now listening.\n");
     fflush(stdout);
@@ -116,17 +119,20 @@ int main(int argc, char **argv)
     int len = 0;
     int in_msg = 0;
 
-    while (1)
+    bool listening = true;
+    while (listening)
     {
-        while (measure_level(DETECT_WIN) < thresh) // wait for a start bit
+        // TODO: Put your covert channel code here
+        // wait for start bit
+        while (get_latency(START_ROUNDS) < threshold)
             ;
-        unsigned char byte = read_byte(rdtsc(), thresh);
 
-        // MARKER always starts a fresh message (\n)
-        if (byte == MARKER)
-        {
+        unsigned char byte = read_byte(rdtsc(), threshold);
+
+        if (byte == LEADING_BYTE)
+        { // should happen twice
             in_msg = 1;
-            len = 0;
+            len = 0; // clears message
         }
         else if (in_msg && byte == '\n')
         {
@@ -137,9 +143,19 @@ int main(int argc, char **argv)
         }
         else if (in_msg && len < (int)sizeof(line) - 1)
         {
-            line[len++] = byte;
+            line[len] = byte;
+            len++;
+        }
+        else
+        {
+            line[len] = '\0';
+            printf("%s\n", line);
+            fflush(stdout);
+            in_msg = 0;
         }
     }
+
+    printf("Receiver finished.\n");
 
     return 0;
 }
