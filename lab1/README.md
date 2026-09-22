@@ -54,11 +54,10 @@ Before we begin, let's take a look at the lab machine's microarchitecture. The s
 
 | Cache          | Cache Line Size | Total Size | Number of Ways (Associativity) | Number of Sets |
 |----------------|-----------------|------------|--------------------------------|----------------|
-| L1-Data        |                 |            |                                |                |
-| L1-Instruction |                 |            |                                |                |
-| L2             |                 |            |                                |                |
-| L3             |                 |            |                                |                |
-
+| L1-Data        |        64       |  32768     |                8               |         64     |
+| L1-Instruction |       64        |    32768   |               1                |         512    |
+| L2             |       64        |   262144   |              4                 |       1024     |
+| L3             |       64        | 16777216   |             16                 |       16384    |
 ## Part 1: Capture the Flag with Flush+Reload (20%)
 
 From now on, we are entering attack time. In this part of the lab, you will be attempting to extract secrets from a victim program. You will get a taste of solving a Capture-the-Flag (CTF) puzzle.
