@@ -15,7 +15,7 @@ static void send_bit(int bit)
             // access the 12 lines
             for (int i = 0; i < NSENDER_LINES; i++)
             {
-                *(char *)lines[i];
+                *(volatile char *)lines[i];
             }
         }
     }

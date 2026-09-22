@@ -40,7 +40,7 @@ static double get_latency(int rounds)
         // prime 6 random lines
         for (int i = 0; i < NRECEIVER_LINES; i++)
         {
-            *(char *)lines[i];
+            *(volatile char *)lines[i];
         }
 
         wait(WAIT_CYCLES);
